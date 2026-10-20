@@ -26,7 +26,7 @@ namespace studio_theme
 
 		struct RampKnot
 		{
-			double stock_lightness{};
+			Lab stock;
 			Lab target;
 		};
 
@@ -34,6 +34,7 @@ namespace studio_theme
 		{
 			Lch stock;
 			Lch target;
+			Role role{};
 		};
 
 		static constexpr double k_neutral_chroma = 0.035;

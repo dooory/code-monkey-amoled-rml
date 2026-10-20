@@ -37,7 +37,8 @@ namespace studio_theme
 		constexpr std::uint64_t k_stale_presents = 600;
 		constexpr std::string_view k_marker_pass = "StudioTheme.ViewportMarker";
 
-		// Mirrors Palette::map (palette.cpp) on the GPU, minus exact-color overrides.
+		// Follows Palette::map (palette.cpp) on the GPU, minus exact-color overrides, narrowed so
+		// thumbnails in the panels keep their colors (see neutral_weight and upload_palette).
 		constexpr const char* k_shader = R"(
 Texture2D source : register(t0);
 SamplerState point_sampler : register(s0);
@@ -47,8 +48,9 @@ cbuffer Mapping : register(b0)
 	float4 knots[8];      // x: stock lightness, yzw: target OKLab
 	float4 hue_stock[8];  // xyz: stock OKLCh
 	float4 hue_target[8]; // xyz: target OKLCh
-	float4 limits;        // x: knot count, y: hue count, z: neutral chroma, w: untinted chroma
+	float4 limits;        // x: knot count, y: hue count
 	float4 reach;         // x: hue reach in degrees
+	float4 knot_tint[8];  // xy: stock OKLab a, b
 };
 
 struct VsOut { float4 position : SV_Position; float2 uv : TEXCOORD0; };
@@ -147,34 +149,79 @@ float3 ramp(float l)
 	return float3(last.y + (l - last.x), last.zw);
 }
 
+// The stock neutrals' slight blue tint at a lightness, interpolated between the ramp's knots and
+// fading out toward pure black and pure white.
+float2 stock_tint(float l)
+{
+	int count = (int)limits.x;
+	if (l <= knots[0].x)
+		return knot_tint[0].xy * saturate(l / knots[0].x);
+	[loop] for (int i = 1; i < count; ++i)
+	{
+		if (l <= knots[i].x)
+			return lerp(knot_tint[i - 1].xy, knot_tint[i].xy, (l - knots[i - 1].x) / (knots[i].x - knots[i - 1].x));
+	}
+	float4 last = knots[count - 1];
+	return knot_tint[count - 1].xy * saturate((1.0 - l) / (1.0 - last.x));
+}
+
+// Panels also show thumbnails, and a pixel alone can't say whether it's UI or photo. Studio's
+// greys all sit on one curve (a slight blue that varies with lightness), and its anti-aliasing
+// blends stay near it; photos almost never do. So only pixels within a hair of that curve are
+// treated as UI grey, and everything else in a thumbnail keeps its own color.
+float curve_weight(float3 lab)
+{
+	return 1.0 - smoothstep(0.003, 0.008, length(lab.yz - stock_tint(lab.x)));
+}
+
+// Averaged over a 5x5 neighbourhood: a dithered gradient (the sign-in backdrop) has pixels on
+// both sides of the curve, and judging each alone turns it grainy.
+float neutral_weight(int2 pixel)
+{
+	float sum = 0;
+	[unroll] for (int y = -2; y <= 2; y += 2)
+		[unroll] for (int x = -2; x <= 2; x += 2)
+			sum += curve_weight(to_oklab(source.Load(int3(pixel + int2(x, y), 0)).rgb));
+	return sum / 9.0;
+}
+
 float4 ps_main(VsOut input) : SV_Target
 {
 	float4 color = source.Sample(point_sampler, input.uv);
 	float3 lab = to_oklab(color.rgb);
 	float3 lch = to_lch(lab);
 
-	if (lch.y < limits.z && (lch.y < limits.w || (lch.z >= 240.0 && lch.z <= 300.0)))
-		return float4(from_oklab(ramp(lab.x)), color.a);
+	float neutral = neutral_weight(int2(input.position.xy));
+	// Keeps the pixel's small offset from the curve, so Studio's greys land exactly on the theme's.
+	float3 neutral_mapped = ramp(lab.x) + float3(0, lab.yz - stock_tint(lab.x));
+	float3 mapped = lerp(lab, neutral_mapped, neutral);
 
-	int nearest = -1;
-	float distance = reach.x;
+	// Blends every accent anchor in reach rather than snapping to the nearest, so hues between
+	// two anchors (red and orange) don't flip from one target to the other. The fourth power keeps
+	// a token on its own anchor's target when a neighbouring anchor is also in reach.
+	float3 shifted_sum = 0;
+	float weight_sum = 0;
+	float strength = 0;
 	[loop] for (int i = 0; i < (int)limits.y; ++i)
 	{
-		float gap = abs(hue_delta(hue_stock[i].z, lch.z));
-		if (gap <= distance)
-		{
-			nearest = i;
-			distance = gap;
-		}
+		float3 stock = hue_stock[i].xyz;
+		float3 target = hue_target[i].xyz;
+		float delta = hue_delta(stock.z, lch.z);
+		// Only colors near an accent token in hue, lightness and saturation; a sky or a photo keeps its own colors.
+		float weight = (1.0 - smoothstep(reach.x * 0.5, reach.x, abs(delta)))
+		    * (1.0 - smoothstep(0.04, 0.1, abs(lch.x - stock.x)))
+		    * (1.0 - smoothstep(0.04, 0.09, abs(lch.y - stock.y)));
+		if (weight <= 0.0)
+			continue;
+		float chroma = stock.y > 0 ? target.y * lch.y / stock.y : target.y;
+		float share = weight * weight * weight * weight;
+		shifted_sum += share * to_lab(float3(target.x + (lch.x - stock.x), chroma, target.z + delta));
+		weight_sum += share;
+		strength = max(strength, weight);
 	}
-	if (nearest < 0)
-		return color;
-
-	float3 stock = hue_stock[nearest].xyz;
-	float3 target = hue_target[nearest].xyz;
-	float chroma = stock.y > 0 ? target.y * lch.y / stock.y : target.y;
-	float3 shifted = float3(target.x + (lch.x - stock.x), chroma, target.z + hue_delta(stock.z, lch.z));
-	return float4(from_oklab(to_lab(shifted)), color.a);
+	if (weight_sum > 0.0)
+		mapped = lerp(mapped, shifted_sum / weight_sum, strength * (1.0 - neutral));
+	return float4(from_oklab(mapped), color.a);
 }
 )";
 
@@ -185,6 +232,7 @@ float4 ps_main(VsOut input) : SV_Target
 			float hue_target[k_max_hues][4];
 			float limits[4];
 			float reach[4];
+			float knot_tint[k_max_knots][4];
 		};
 
 		struct SwapEntry
@@ -343,18 +391,25 @@ float4 ps_main(VsOut input) : SV_Target
 		const auto& hues = palette->hue_anchors();
 		Mapping mapping{};
 		const auto knot_count = std::min(knots.size(), k_max_knots);
-		const auto hue_count = std::min(hues.size(), k_max_hues);
+		std::size_t hue_count = 0;
 		for (std::size_t i = 0; i < knot_count; ++i)
 		{
 			const auto& knot = knots[i];
-			mapping.knots[i][0] = static_cast<float>(knot.stock_lightness);
+			mapping.knots[i][0] = static_cast<float>(knot.stock.l);
 			mapping.knots[i][1] = static_cast<float>(knot.target.l);
 			mapping.knots[i][2] = static_cast<float>(knot.target.a);
 			mapping.knots[i][3] = static_cast<float>(knot.target.b);
+			mapping.knot_tint[i][0] = static_cast<float>(knot.stock.a);
+			mapping.knot_tint[i][1] = static_cast<float>(knot.stock.b);
 		}
-		for (std::size_t i = 0; i < hue_count; ++i)
+		// Only the accent: the panels use Studio's blue for buttons, links and selection, while its
+		// red, orange, yellow and green mostly turn up in thumbnails, where shifting them is wrong
+		// (an orange butterfly turns yellow). The Qt shell still maps all of them.
+		for (const auto& [stock, target, role] : hues)
 		{
-			const auto& [stock, target] = hues[i];
+			if (role != Role::Accent || hue_count == k_max_hues)
+				continue;
+			const auto i = hue_count++;
 			mapping.hue_stock[i][0] = static_cast<float>(stock.l);
 			mapping.hue_stock[i][1] = static_cast<float>(stock.c);
 			mapping.hue_stock[i][2] = static_cast<float>(stock.h);
@@ -364,8 +419,6 @@ float4 ps_main(VsOut input) : SV_Target
 		}
 		mapping.limits[0] = static_cast<float>(knot_count);
 		mapping.limits[1] = static_cast<float>(hue_count);
-		mapping.limits[2] = static_cast<float>(Palette::k_neutral_chroma);
-		mapping.limits[3] = static_cast<float>(Palette::k_untinted_chroma);
 		mapping.reach[0] = static_cast<float>(Palette::k_hue_reach);
 		context->UpdateSubresource(constants.Get(), 0, nullptr, &mapping, 0, 0);
 	}

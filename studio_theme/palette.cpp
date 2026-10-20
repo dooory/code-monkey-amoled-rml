@@ -49,11 +49,11 @@ namespace studio_theme
 		const auto& anchors = m_theme.base == Base::Light ? k_light_anchors : k_dark_anchors;
 
 		for (std::size_t i = 0; i < anchors.neutrals.size(); ++i)
-			m_ramp.push_back({stock_lab(anchors.neutrals[i]).l, to_oklab(m_theme.role(k_neutral_roles[i]))});
-		std::ranges::sort(m_ramp, {}, &RampKnot::stock_lightness);
+			m_ramp.push_back({stock_lab(anchors.neutrals[i]), to_oklab(m_theme.role(k_neutral_roles[i]))});
+		std::ranges::sort(m_ramp, {}, [](const RampKnot& knot) { return knot.stock.l; });
 
 		for (const auto& [hex, role] : anchors.hues)
-			m_hues.push_back({to_lch(stock_lab(hex)), to_lch(to_oklab(m_theme.role(role)))});
+			m_hues.push_back({to_lch(stock_lab(hex)), to_lch(to_oklab(m_theme.role(role))), role});
 	}
 
 	const Color* Palette::overridden(const Color& stock) const
@@ -66,15 +66,15 @@ namespace studio_theme
 	{
 		const auto& first = m_ramp.front();
 		const auto& last = m_ramp.back();
-		if (lightness <= first.stock_lightness)
-			return {first.target.l + (lightness - first.stock_lightness), first.target.a, first.target.b};
-		if (lightness >= last.stock_lightness)
-			return {last.target.l + (lightness - last.stock_lightness), last.target.a, last.target.b};
+		if (lightness <= first.stock.l)
+			return {first.target.l + (lightness - first.stock.l), first.target.a, first.target.b};
+		if (lightness >= last.stock.l)
+			return {last.target.l + (lightness - last.stock.l), last.target.a, last.target.b};
 
-		const auto upper = std::ranges::upper_bound(m_ramp, lightness, {}, &RampKnot::stock_lightness);
+		const auto upper = std::ranges::upper_bound(m_ramp, lightness, {}, [](const RampKnot& knot) { return knot.stock.l; });
 		const auto& high = *upper;
 		const auto& low = *std::prev(upper);
-		const double t = (lightness - low.stock_lightness) / (high.stock_lightness - low.stock_lightness);
+		const double t = (lightness - low.stock.l) / (high.stock.l - low.stock.l);
 		return {std::lerp(low.target.l, high.target.l, t), std::lerp(low.target.a, high.target.a, t), std::lerp(low.target.b, high.target.b, t)};
 	}
 
