@@ -1,0 +1,35 @@
+{
+	"name": "Code Monkey AMOLED",
+	"base": "Dark",
+	"colors": {
+		"background": "#000000",
+		"surface": "#111111",
+		"border": "#303030",
+		"muted": "#858585",
+		"text": "#DCDCDC",
+		"accent": "#007ACC",
+		"success": "#89D185",
+		"warning": "#CCA700",
+		"error": "#F14C4C"
+	},
+	"syntax": {
+		"Default": "#D4D4D4",
+		"Keyword": "#C586C0",
+		"LuauKeyword": "#C586C0",
+		"Local": "#569CD6",
+		"Function": "#569CD6",
+		"Self": "#569CD6",
+		"String": "#CE9178",
+		"Number": "#B5CEA8",
+		"Bool": "#569CD6",
+		"Nil": "#569CD6",
+		"Comment": "#6A9955",
+		"Builtin": "#4EC9B0",
+		"Method": "#DCDCAA",
+		"FunctionName": "#DCDCAA",
+		"Property": "#9CDCFE",
+		"Operator": "#D4D4D4",
+		"Bracket": "#D4D4D4",
+		"TODO": "#569CD6"
+	}
+}
