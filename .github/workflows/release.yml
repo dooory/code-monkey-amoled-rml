@@ -33,6 +33,12 @@ jobs:
       - name: Build
         shell: pwsh
         run: |
+          # Stop at the first failing command instead of carrying on to a confusing later error.
+          $PSNativeCommandUseErrorActionPreference = $true
+          $ErrorActionPreference = 'Stop'
+          # Dependencies clone deep under the runner's long workspace path; some of their files
+          # pass Windows' 260-character limit without this.
+          git config --global core.longpaths true
           Remove-Item modloader/examples/studio_theme -Recurse -Force
           Copy-Item studio_theme modloader/examples/studio_theme -Recurse
           cmake -S modloader -B modloader/build
