@@ -1,0 +1,53 @@
+# Builds the mod against a pinned Roblox ModLoader and publishes studio_theme.zip as a release.
+# Push a tag to run it: git tag v1.0.0; git push origin v1.0.0
+name: Release
+
+on:
+  push:
+    tags: [ 'v*' ]
+
+env:
+  # The ModLoader commit the mod is built against. A mod only loads in a compatible mod loader,
+  # so bump this deliberately and say so in the release.
+  MODLOADER_REF: 24d1e83d95eb0201d6dc663aa5aaa8ec3074d84b
+
+jobs:
+  release:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: revolutionxk/roblox-modloader
+          ref: ${{ env.MODLOADER_REF }}
+          path: modloader
+          submodules: recursive
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Build
+        shell: pwsh
+        run: |
+          Remove-Item modloader/examples/studio_theme -Recurse -Force
+          Copy-Item studio_theme modloader/examples/studio_theme -Recurse
+          cmake -S modloader -B modloader/build
+          cmake --build modloader/build --target studio_theme --config Release
+
+      - name: Package
+        shell: pwsh
+        run: ./package.ps1 -ModLoader modloader
+
+      - name: Publish
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $short = $env:MODLOADER_REF.Substring(0, 7)
+          gh release create $env:GITHUB_REF_NAME studio_theme.zip `
+            --title $env:GITHUB_REF_NAME `
+            --notes "Built against Roblox ModLoader [$short](https://github.com/revolutionxk/roblox-modloader/commit/$env:MODLOADER_REF). Import studio_theme.zip with **Add from .zip** in the launcher's Mods section."

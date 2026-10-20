@@ -45,6 +45,17 @@ The mod builds as part of the Roblox ModLoader source tree. You need Visual Stud
 
    This writes `studio_theme.zip` next to the script, ready for **Add from .zip**.
 
+## Releasing
+
+Push a version tag and the Release workflow builds the mod, packages it and publishes `studio_theme.zip` as a GitHub release:
+
+```powershell
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+The workflow builds against the Roblox ModLoader commit in `MODLOADER_REF` at the top of [`.github/workflows/release.yml`](.github/workflows/release.yml). The release notes name that commit. To target a newer mod loader, change it there.
+
 ## Changing colors
 
 The theme lives in `studio_theme/themes/presets/code-monkey-amoled.json`:
