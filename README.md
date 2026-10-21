@@ -26,6 +26,12 @@ Each release is built against one version of Roblox ModLoader, named in the rele
 
 Studio installs each update into a new version folder, so import the zip again after Studio updates.
 
+## Font
+
+Install **Inconsolata Nerd Font Mono** from the [Nerd Fonts Inconsolata release](https://github.com/ryanoasis/nerd-fonts/releases/download/v3.4.0/Inconsolata.zip), then restart Studio. Open **File > Studio Settings > Script Editor > Font** and select that family. Keep your preferred editor size.
+
+The mod customizes colors rather than fonts. This setting changes the script editor; the ribbon, Explorer, Properties and other panels keep their native fonts. The font includes Nerd Font symbols, but does not replace Studio's existing icons.
+
 ## Build
 
 The mod builds as part of the Roblox ModLoader source tree. You need Visual Studio 2022 Build Tools with the C++ workload, and CMake.
